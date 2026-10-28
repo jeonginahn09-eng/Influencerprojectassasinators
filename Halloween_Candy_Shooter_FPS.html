@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>할로윈 캔디 슈터 - 3D FPS</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js (3D Engine) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    * {
+      touch-action: none;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background-color: #0d021a;
+      color: #fff;
+    }
+
+    #game-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+
+    /* Joystick Area Styling */
+    #joystick-zone {
+      position: absolute;
+      bottom: 25px;
+      left: 25px;
+      width: 130px;
+      height: 130px;
+      background: rgba(255, 255, 255, 0.2);
+      border: 3px solid rgba(244, 114, 182, 0.9);
+      border-radius: 50%;
+      z-index: 100;
+      box-shadow: 0 0 25px rgba(236, 72, 153, 0.6), inset 0 0 15px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+    }
+
+    #joystick-stick {
+      width: 54px;
+      height: 54px;
+      background: radial-gradient(circle, #ff007f 0%, #9333ea 100%);
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 20px rgba(255, 0, 127, 0.9);
+      pointer-events: none;
+      transform: translate(0px, 0px);
+    }
+
+    /* Fire Button Styling */
+    #mobile-shoot-btn {
+      position: absolute;
+      bottom: 30px;
+      right: 30px;
+      width: 95px;
+      height: 95px;
+      background: radial-gradient(circle, #ff007f 0%, #f59e0b 100%);
+      border: 4px solid #fef08a;
+      border-radius: 50%;
+      box-shadow: 0 0 30px rgba(245, 158, 11, 0.9);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    #mobile-shoot-btn:active {
+      transform: scale(0.90);
+      box-shadow: 0 0 40px rgba(236, 72, 153, 1);
+    }
+
+    /* Crosshair */
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 28px;
+      height: 28px;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 30;
+    }
+    #crosshair::before, #crosshair::after {
+      content: '';
+      position: absolute;
+      background: #facc15;
+      box-shadow: 0 0 8px #ec4899;
+    }
+    #crosshair::before { top: 13px; left: 0; width: 28px; height: 3px; border-radius: 2px; }
+    #crosshair::after { top: 0; left: 13px; width: 3px; height: 28px; border-radius: 2px; }
+
+    /* Damage Flash */
+    #damage-flash {
+      position: absolute;
+      inset: 0;
+      background-color: rgba(239, 68, 68, 0.5);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s ease-out;
+      z-index: 40;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 20px rgba(236, 72, 153, 0.6); }
+      50% { box-shadow: 0 0 40px rgba(236, 72, 153, 0.95); }
+    }
+    .animate-pulse-glow { animation: pulse-glow 2s infinite; }
+  </style>
+</head>
+<body class="relative bg-slate-950 text-white overflow-hidden select-none">
+
+  <!-- 3D Canvas -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- Center Crosshair -->
+  <div id="crosshair"></div>
+
+  <!-- HUD Overlay -->
+  <div id="hud" class="absolute top-0 left-0 w-full p-4 pointer-events-none z-20 flex justify-between items-start">
+    <!-- Player Health & Weapon -->
+    <div class="bg-purple-950/85 backdrop-blur border border-purple-500/50 rounded-2xl p-3 sm:p-4 shadow-lg min-w-[160px]">
+      <div class="flex items-center gap-2 mb-1">
+        <i class="fa-solid fa-heart text-red-500 text-lg sm:text-xl"></i>
+        <span class="text-xs sm:text-sm text-purple-200 font-bold">체력 (HP)</span>
+      </div>
+      <div id="hp-bar" class="flex gap-1.5 my-1 text-xl sm:text-2xl text-red-500">
+        <!-- Hearts injected by JS -->
+      </div>
+      
+      <div class="mt-2 pt-2 border-t border-purple-800/60 flex justify-between items-center text-xs text-purple-300">
+        <span>무기:</span>
+        <span id="weapon-level" class="font-bold text-amber-300">Lv.1 일반 캔디건</span>
+      </div>
+    </div>
+
+    <!-- Score & Round Status -->
+    <div class="flex flex-col items-end gap-2">
+      <div class="bg-purple-950/85 backdrop-blur border border-purple-500/50 rounded-2xl p-3 sm:p-4 shadow-lg text-right">
+        <div class="text-xs text-purple-300">현재 점수</div>
+        <div id="score-text" class="text-2xl sm:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-pink-500">0</div>
+        
+        <div class="mt-2 text-xs text-purple-300 flex items-center justify-end gap-2">
+          <span>처치 수:</span>
+          <span id="round-kills" class="font-bold text-pink-400 text-sm">0 / 5</span>
+        </div>
+        <div class="text-xs text-amber-400/90 mt-0.5 font-bold">ROUND <span id="current-round">1</span> / 15</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Damage Red Flash Overlay -->
+  <div id="damage-flash"></div>
+
+  <!-- Mobile Controls -->
+  <div id="joystick-zone">
+    <div id="joystick-stick"></div>
+  </div>
+
+  <button id="mobile-shoot-btn" type="button">
+    <i class="fa-solid fa-candy-cane text-3xl text-white drop-shadow-md"></i>
+    <span class="text-[11px] font-black text-amber-100 uppercase mt-0.5">발사</span>
+  </button>
+
+  <!-- START OVERLAY -->
+  <div id="start-screen" class="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center">
+    <div class="max-w-md w-full bg-purple-900/60 border border-purple-500/60 rounded-3xl p-6 sm:p-8 shadow-2xl animate-pulse-glow">
+      <div class="inline-block p-4 bg-purple-800/70 rounded-full mb-3">
+        <i class="fa-solid fa-ghost text-4xl text-amber-400"></i>
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-pink-400 to-purple-300 mb-2">
+        할로윈 캔디 슈터 FPS
+      </h1>
+      <p class="text-xs sm:text-sm text-purple-200 mb-5 leading-relaxed">
+        할로윈 저택을 공격하는 몬스터 병정들을 사탕건으로 퇴치하세요!<br>
+        각 라운드(총 15라운드)마다 <span class="text-amber-300 font-semibold">역사 퀴즈</span>가 등장합니다.
+      </p>
+
+      <div class="text-left bg-purple-950/80 rounded-2xl p-4 border border-purple-700/50 text-xs text-purple-200 mb-6 space-y-2">
+        <div class="flex items-center gap-2"><i class="fa-solid fa-gamepad text-pink-400"></i> <span><b>이동:</b> 왼쪽 조이스틱 / WASD</span></div>
+        <div class="flex items-center gap-2"><i class="fa-solid fa-crosshairs text-pink-400"></i> <span><b>시점 둘러보기:</b> 화면 드래그 (마우스 / 터치)</span></div>
+        <div class="flex items-center gap-2"><i class="fa-solid fa-gun text-pink-400"></i> <span><b>발사:</b> 발사 버튼 / 클릭</span></div>
+      </div>
+
+      <button id="start-btn" type="button" class="w-full py-4 bg-gradient-to-r from-pink-500 to-amber-500 hover:from-pink-600 hover:to-amber-600 rounded-2xl font-bold text-lg text-white shadow-lg active:scale-95 transition">
+        게임 시작하기 <i class="fa-solid fa-play ml-1"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- QUIZ MODAL -->
+  <div id="quiz-modal" class="hidden absolute inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+    <div class="max-w-lg w-full bg-purple-900/95 border-2 border-amber-400/80 rounded-3xl p-6 shadow-2xl relative">
+      <div class="flex items-center justify-between mb-4">
+        <span id="quiz-round-tag" class="px-3 py-1 bg-amber-400 text-purple-950 text-xs font-black rounded-full">
+          ROUND QUIZ
+        </span>
+        <span class="text-xs text-purple-200 flex items-center gap-1">
+          <i class="fa-solid fa-gift text-amber-400"></i> 정답시 총 업그레이드 + HP +1
+        </span>
+      </div>
+
+      <h3 id="quiz-question" class="text-sm sm:text-base font-bold text-white mb-5 leading-snug">
+        퀴즈 불러오는 중...
+      </h3>
+
+      <div id="quiz-options" class="space-y-2.5 mb-5">
+        <!-- Options injected by JS -->
+      </div>
+
+      <div id="quiz-feedback" class="hidden text-center p-3 rounded-xl font-bold text-xs sm:text-sm"></div>
+    </div>
+  </div>
+
+  <!-- GAME OVER / CLEAR OVERLAY -->
+  <div id="game-over-screen" class="hidden absolute inset-0 bg-slate-950/95 backdrop-blur-md z-50 flex flex-col items-center justify-center p-6 text-center">
+    <div class="max-w-md w-full bg-purple-900/50 border border-red-500/60 rounded-3xl p-6 sm:p-8 shadow-2xl" id="end-card-bg">
+      <div id="end-icon-box" class="inline-block p-4 bg-red-900/40 rounded-full mb-3 text-red-400">
+        <i id="end-icon" class="fa-solid fa-skull text-4xl"></i>
+      </div>
+      <h2 id="end-title" class="text-2xl sm:text-3xl font-black text-red-400 mb-1">GAME OVER</h2>
+      <p id="end-subtext" class="text-purple-300 text-xs sm:text-sm mb-5">저택의 몬스터 병정들에게 쓰러졌습니다!</p>
+
+      <div class="bg-purple-950/80 rounded-2xl p-4 border border-purple-800/80 mb-5">
+        <div class="text-xs text-purple-300">최종 처치 점수</div>
+        <div id="final-score" class="text-3xl font-extrabold text-amber-400 my-1">0</div>
+        <div class="text-xs text-purple-400">최대 도달 라운드: <span id="final-round" class="text-purple-200 font-bold">1</span></div>
+      </div>
+
+      <div class="space-y-3">
+        <!-- Google Form Link Box -->
+        <div class="bg-purple-950/90 p-3 rounded-2xl border border-purple-600/60 text-left">
+          <div class="text-[11px] text-purple-300 font-bold mb-1 flex items-center justify-between">
+            <span><i class="fa-solid fa-paper-plane text-emerald-400 mr-1"></i> 구글폼 점수 등록 링크</span>
+            <span id="copy-status" class="text-emerald-400 font-normal hidden">복사됨!</span>
+          </div>
+          <div class="flex gap-1.5 items-center">
+            <input id="google-form-url" type="text" readonly value="https://docs.google.com/forms/d/1K62EdkJBKmUnAu7c8Xp6KG3e_9Q_4aG2GZlZd02ZuTM/edit?hl=ko" class="w-full bg-slate-900 border border-purple-800 text-xs text-purple-200 rounded-xl px-2.5 py-2 select-all focus:outline-none">
+            <button id="copy-url-btn" type="button" class="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs px-3 py-2 rounded-xl shrink-0 transition flex items-center gap-1">
+              <i class="fa-solid fa-copy"></i> 복사
+            </button>
+          </div>
+        </div>
+
+        <!-- Retry Button -->
+        <button id="retry-btn" type="button" class="w-full py-3.5 px-4 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-bold rounded-2xl shadow-lg transition active:scale-95 text-xs sm:text-sm flex items-center justify-center gap-2">
+          <i class="fa-solid fa-rotate-right"></i> 다시 시도하기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ==========================================
+       15 ROUND HISTORY QUIZZES (UNIQUE)
+       ========================================== */
+    const POSTER_QUIZZES = [
+      {
+        question: "영화 《암살자(들)》의 모티프가 된 1974년 8월 15일 광복절 경축식 현장의 역사적 사건은 무엇인가요?",
+        options: ["1. 육영수 여사 피살 사건", "2. 10·26 사건", "3. 김대중 납치 사건", "4. 12·12 군사 반란"],
+        answer: 0
+      },
+      {
+        question: "정부의 공식 수사 결과 발표에서 육영수 여사 피격 사건의 단독 범인으로 발표된 인물은 누구인가요?",
+        options: ["1. 문태광", "2. 문세광", "3. 철구", "4. 영일"],
+        answer: 1
+      },
+      {
+        question: "영화 《암살자(들)》이 역사적 사실에 허구적 인물과 영화적 상상력을 더해 사건을 재구성한 연출 방식은 무엇인가요?",
+        options: ["1. SF 타임슬립 방식", "2. 팩션(Faction) 방식", "3. 다큐멘터리 방식", "4. 판타지 방식"],
+        answer: 1
+      },
+      {
+        question: "영화 《암살자(들)》에서 사건 추적을 통해 보여주는 과거 독재 정권의 핵심적인 문제점은 무엇인가요?",
+        options: ["1. 경제 개발 계획 실패", "2. 외교 관계 악화", "3. 정보 통제와 공론장 말살 등 국가폭력", "4. 첨단 과학기술의 무분별한 도입"],
+        answer: 2
+      },
+      {
+        question: "영화 개봉 직후, 나와 다른 역사관을 담았다는 이유로 온라인 공간에서 자행된 대표적인 집단 행동은 무엇인가요?",
+        options: ["1. 영화 제작비 펀딩", "2. 별점 테러 및 평점 조작", "3. 단체 관람 운동", "4. 해외 영화제 출품 지원"],
+        answer: 1
+      },
+      {
+        question: "포스터에서 언급한 뉴미디어 환경 속 현 세대 현대사 인식의 문제점으로 옳지 않은 것은 무엇인가요?",
+        options: ["1. 나와 다른 견해를 용납하지 않는 날선 확증 편향", "2. 극단적인 진영논리와 배타성", "3. 자유롭고 다각적인 공론장의 활성화", "4. 사적 제제와 조직적인 관람 거부"],
+        answer: 2
+      },
+      {
+        question: "영화 속에서 사회부장 '재환'과 신입기자 '영일'의 관계 및 입장에 대한 설명으로 가장 적절한 것은 무엇인가요?",
+        options: ["1. 두 사람 모두 정부 발표를 완벽히 신봉한다.", "2. 재환의 독려 속에서 영일이 사건의 구체적 의문점을 추적한다.", "3. 영일이 취재를 주도하고 재환은 이를 방해한다.", "4. 두 사람 모두 기사 작성을 포기하고 사건에서 손을 뗀다."],
+        answer: 1
+      },
+      {
+        question: "영화에서 정부의 '단독 범행' 발표에 대해 신입기자 영일이 제기하는 대표적인 수사 의문점 중 하나는 무엇인가요?",
+        options: ["1. 범인이 사용한 총기의 제조 국가", "2. 경호원 총격의 진상 및 현장 탄환 조사의 불투명성", "3. 행사장의 조명 설치 문제", "4. 대통령의 연설문 작성 과정"],
+        answer: 1
+      },
+      {
+        question: "영화의 모티프가 된 육영수 여사 피살 사건이 발생한 연도는 몇 년도인가요?",
+        options: ["1. 1960년", "2. 1974년", "3. 1980년", "4. 1987년"],
+        answer: 1
+      },
+      {
+        question: "영화 개봉 후 온라인에서 나타난 '별점 테러' 외에 포스터에서 지적한 또 다른 배타적 집단행동은 무엇인가요?",
+        options: ["1. 온라인 서명 운동 및 조직적인 관람 거부", "2. 제작진에 대한 감사 편지 보내기", "3. 감독 초청 토크쇼 개최", "4. 영화 원작 소설 베스트셀러 만들기"],
+        answer: 0
+      },
+      {
+        question: "포스터에서 지적하는 과거 독재 정권 시절의 공론장과 현대 뉴미디어 환경의 공통적인 폐해는 무엇인가요?",
+        options: ["1. 해외 언론의 과도한 개입", "2. 검증되지 않은 소문으로 인한 경제적 손실", "3. 건강한 토론이 사라지고 타인의 의견을 억압하려는 시도", "4. 종이 신문 유통의 급격한 감소"],
+        answer: 2
+      },
+      {
+        question: "실제 역사적 사건에 기자의 추적 서사를 결합한 영화 《암살자(들)》의 주된 장르적 특성은 무엇인가요?",
+        options: ["1. 순수 SF 로맨스", "2. 정치·역사 스릴러 및 팩션", "3. 고전 뮤지컬", "4. 스포츠 드라메디"],
+        answer: 1
+      },
+      {
+        question: "포스터에서 언급된 '확증 편향(Confirmation Bias)'의 올바른 의미는 무엇인가요?",
+        options: ["1. 모든 정보를 객관적으로 비교 분석하려는 태도", "2. 자신의 기존 신념과 일치하는 정보만 받아들이고 반대 정보는 무시하는 경향", "3. 타인의 의견을 무조건 받아들이는 성향", "4. 새로운 정보에 따라 자신의 생각을 계속 바꾸는 현상"],
+        answer: 1
+      },
+      {
+        question: "영화 속 '재환'과 '영일'이라는 두 기자의 인물 설정을 통해 강조하고자 하는 언론의 바람직한 역할은 무엇인가요?",
+        options: ["1. 권력의 발표를 토씨 하나 틀리지 않고 전달하기", "2. 공식적 발표 뒤에 숨겨진 진실을 밝히기 위해 끊임없이 의문을 던지기", "3. 대중의 자극적인 관심사에만 집중하기", "4. 정부의 정책을 무조건 옹호하기"],
+        answer: 1
+      },
+      {
+        question: "영화 《암살자(들)》과 포스터 내용이 오늘날 관객들에게 최종적으로 제시하는 역사 성찰의 방향은 무엇인가요?",
+        options: ["1. 과거 사건에 대해 단 하나의 정답만을 강요하기", "2. 확증 편향에서 벗어나 역사를 다각적이고 비판적으로 바라보기", "3. 인터넷상의 악성 댓글을 적극 권장하기", "4. 불편한 역사적 사실은 기억에서 완전히 지우기"],
+        answer: 1
+      }
+    ];
+
+    /* ==========================================
+       GAME STATE & CONFIGS
+       ========================================== */
+    const GAME = {
+      hp: 3,
+      maxHp: 5,
+      score: 0,
+      killsThisRound: 0,
+      killsToNextRound: 5,
+      currentRound: 1,
+      maxRounds: 15,
+      weaponLevel: 1,
+      isPaused: true,
+      isGameOver: false,
+      enemies: [],
+      bullets: [],
+      particles: [],
+      lastDamageTime: 0,
+      lastShotTime: 0
+    };
+
+    // Scaled weapons for 15 rounds
+    const WEAPON_CONFIGS = [
+      { level: 1, name: "Lv.1 일반 캔디건", color: 0xff0055, speed: 0.9, cooldown: 220, damage: 1, size: 0.3 },
+      { level: 2, name: "Lv.2 파워 캔디건", color: 0xffaa00, speed: 1.2, cooldown: 180, damage: 2, size: 0.35 },
+      { level: 3, name: "Lv.3 울트라 사탕포", color: 0x00ffcc, speed: 1.5, cooldown: 150, damage: 3, size: 0.4 },
+      { level: 4, name: "Lv.4 하이퍼 캐논", color: 0xff00ff, speed: 1.8, cooldown: 120, damage: 5, size: 0.5 },
+      { level: 5, name: "Lv.5 캔디 라이플", color: 0x38bdf8, speed: 2.1, cooldown: 90, damage: 8, size: 0.55 },
+      { level: 6, name: "Lv.MAX 마스터 캔디 블래스터", color: 0xfacc15, speed: 2.5, cooldown: 70, damage: 12, size: 0.65 }
+    ];
+
+    let scene, camera, renderer;
+    let clock = new THREE.Clock();
+    const moveVector = { forward: 0, right: 0 };
+    const keysPressed = {};
+    let cameraYaw = 0, cameraPitch = 0;
+
+    /* ==========================================
+       INITIALIZATION
+       ========================================== */
+    window.addEventListener('load', () => {
+      initThreeJS();
+      createEnvironment();
+      setupControls();
+      updateHUD();
+    });
+
+    function initThreeJS() {
+      const container = document.getElementById('game-canvas');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x230c33);
+      scene.fog = new THREE.FogExp2(0x230c33, 0.02);
+
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+      camera.position.set(0, 1.6, 0);
+
+      renderer = new THREE.WebGLRenderer({ canvas: container, antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      const ambientLight = new THREE.AmbientLight(0xffe3bc, 1.2);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0xffb042, 1.2);
+      dirLight.position.set(20, 35, 20);
+      scene.add(dirLight);
+
+      const playerLight = new THREE.PointLight(0xff00aa, 1.5, 15);
+      camera.add(playerLight);
+      scene.add(camera);
+    }
+
+    function createEnvironment() {
+      const floorGeo = new THREE.PlaneGeometry(60, 60);
+      const floorMat = new THREE.MeshStandardMaterial({ color: 0x3d1e4e, roughness: 0.6 });
+      const floor = new THREE.Mesh(floorGeo, floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      scene.add(floor);
+
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0x512966, roughness: 0.6 });
+      const wallGeo = new THREE.BoxGeometry(60, 12, 1);
+
+      const walls = [
+        { pos: [0, 6, -30], rot: [0, 0, 0] },
+        { pos: [0, 6, 30], rot: [0, 0, 0] },
+        { pos: [-30, 6, 0], rot: [0, Math.PI / 2, 0] },
+        { pos: [30, 6, 0], rot: [0, Math.PI / 2, 0] }
+      ];
+
+      walls.forEach(w => {
+        const wall = new THREE.Mesh(wallGeo, wallMat);
+        wall.position.set(...w.pos);
+        wall.rotation.set(...w.rot);
+        scene.add(wall);
+      });
+
+      const pillarGeo = new THREE.CylinderGeometry(1.2, 1.2, 12, 12);
+      const pillarMat = new THREE.MeshStandardMaterial({ color: 0x2b153d });
+      const posArr = [-18, 0, 18];
+
+      posArr.forEach(x => {
+        posArr.forEach(z => {
+          if (x !== 0 || z !== 0) {
+            const pillar = new THREE.Mesh(pillarGeo, pillarMat);
+            pillar.position.set(x, 6, z);
+            scene.add(pillar);
+          }
+        });
+      });
+    }
+
+    /* ==========================================
+       MONSTER TYPES & SPAWNING
+       ========================================== */
+    const MONSTER_TYPES = {
+      ZOMBIE: { name: "좀비", color: 0x22c55e, speed: 2.0, baseHp: 2, scale: [1.0, 1.8, 1.0] },
+      VAMPIRE: { name: "뱀파이어", color: 0xef4444, speed: 2.8, baseHp: 3, scale: [0.8, 1.9, 0.8] },
+      SKELETON: { name: "스켈레톤", color: 0xf8fafc, speed: 2.4, baseHp: 2, scale: [0.7, 1.7, 0.7] },
+      WITCH: { name: "마녀", color: 0xa855f7, speed: 2.1, baseHp: 4, scale: [0.9, 1.6, 0.9] }
+    };
+
+    function spawnMonster() {
+      if (GAME.isPaused || GAME.isGameOver) return;
+      if (GAME.enemies.length >= Math.min(12, 4 + GAME.currentRound)) return;
+
+      const keys = Object.keys(MONSTER_TYPES);
+      const type = MONSTER_TYPES[keys[Math.floor(Math.random() * keys.length)]];
+
+      const group = new THREE.Group();
+      
+      const mat = new THREE.MeshStandardMaterial({ color: type.color, roughness: 0.4 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(...type.scale), mat);
+      body.position.y = type.scale[1] / 2;
+      group.add(body);
+
+      const eyeGeo = new THREE.SphereGeometry(0.12, 8, 8);
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+      const eye1 = new THREE.Mesh(eyeGeo, eyeMat);
+      const eye2 = new THREE.Mesh(eyeGeo, eyeMat);
+      eye1.position.set(-0.25, type.scale[1] * 0.75, type.scale[2] / 2 + 0.05);
+      eye2.position.set(0.25, type.scale[1] * 0.75, type.scale[2] / 2 + 0.05);
+      group.add(eye1);
+      group.add(eye2);
+
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 16 + Math.random() * 10;
+      group.position.x = Math.cos(angle) * dist;
+      group.position.z = Math.sin(angle) * dist;
+
+      // Dynamic HP & Speed Scaler per round
+      const roundHpMultiplier = 1 + (GAME.currentRound - 1) * 0.8;
+      const totalHp = Math.round(type.baseHp * roundHpMultiplier);
+
+      const enemyObj = {
+        mesh: group,
+        material: mat,
+        originalColor: type.color,
+        speed: type.speed + (GAME.currentRound * 0.25),
+        hp: totalHp,
+        maxHp: totalHp,
+        radius: 1.1,
+        height: type.scale[1]
+      };
+
+      scene.add(group);
+      GAME.enemies.push(enemyObj);
+    }
+
+    /* ==========================================
+       SHOOTING & BULLET SYSTEM
+       ========================================== */
+    function shootCandy() {
+      if (GAME.isPaused || GAME.isGameOver) return;
+
+      const now = performance.now();
+      const gun = WEAPON_CONFIGS[Math.min(GAME.weaponLevel - 1, WEAPON_CONFIGS.length - 1)];
+
+      if (now - GAME.lastShotTime < gun.cooldown) return;
+      GAME.lastShotTime = now;
+
+      const bulletGeo = new THREE.SphereGeometry(gun.size, 8, 8);
+      const bulletMat = new THREE.MeshStandardMaterial({
+        color: gun.color,
+        emissive: gun.color,
+        emissiveIntensity: 0.9
+      });
+      const bullet = new THREE.Mesh(bulletGeo, bulletMat);
+
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      bullet.position.copy(camera.position).addScaledVector(dir, 0.5);
+
+      GAME.bullets.push({
+        mesh: bullet,
+        direction: dir,
+        speed: gun.speed,
+        damage: gun.damage,
+        life: 80
+      });
+
+      scene.add(bullet);
+    }
+
+    /* ==========================================
+       MAIN GAME LOOP & UPDATES
+       ========================================== */
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = clock.getDelta();
+
+      if (!GAME.isPaused && !GAME.isGameOver) {
+        updateMovement(delta);
+        updateBullets();
+        updateEnemies(delta);
+        updateParticles();
+
+        if (Math.random() < 0.06) spawnMonster();
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    function updateMovement(delta) {
+      const speed = 7.5 * delta;
+      
+      // 카메라 평면 전방 벡터 (Y축 제거)
+      const forwardDir = new THREE.Vector3();
+      camera.getWorldDirection(forwardDir);
+      forwardDir.y = 0;
+      forwardDir.normalize();
+
+      // 카메라 평면 우측 벡터
+      const rightDir = new THREE.Vector3();
+      rightDir.crossVectors(forwardDir, new THREE.Vector3(0, 1, 0)).normalize();
+
+      let dx = 0, dz = 0;
+
+      // 키보드 이동
+      if (keysPressed['KeyW'] || keysPressed['ArrowUp']) {
+        dx += forwardDir.x;
+        dz += forwardDir.z;
+      }
+      if (keysPressed['KeyS'] || keysPressed['ArrowDown']) {
+        dx -= forwardDir.x;
+        dz -= forwardDir.z;
+      }
+      if (keysPressed['KeyA'] || keysPressed['ArrowLeft']) {
+        dx -= rightDir.x;
+        dz -= rightDir.z;
+      }
+      if (keysPressed['KeyD'] || keysPressed['ArrowRight']) {
+        dx += rightDir.x;
+        dz += rightDir.z;
+      }
+
+      // 조이스틱 이동 (moveVector.right > 0: 오른쪽, moveVector.forward > 0: 전진)
+      if (moveVector.forward !== 0 || moveVector.right !== 0) {
+        dx += forwardDir.x * moveVector.forward + rightDir.x * moveVector.right;
+        dz += forwardDir.z * moveVector.forward + rightDir.z * moveVector.right;
+      }
+
+      const newX = camera.position.x + dx * speed;
+      const newZ = camera.position.z + dz * speed;
+
+      if (Math.abs(newX) < 27) camera.position.x = newX;
+      if (Math.abs(newZ) < 27) camera.position.z = newZ;
+    }
+
+    function updateBullets() {
+      for (let i = GAME.bullets.length - 1; i >= 0; i--) {
+        const b = GAME.bullets[i];
+        b.mesh.position.addScaledVector(b.direction, b.speed);
+        b.life--;
+
+        let bulletHit = false;
+
+        for (let j = GAME.enemies.length - 1; j >= 0; j--) {
+          const enemy = GAME.enemies[j];
+          
+          const distXZ = Math.hypot(b.mesh.position.x - enemy.mesh.position.x, b.mesh.position.z - enemy.mesh.position.z);
+          const distY = Math.abs(b.mesh.position.y - (enemy.mesh.position.y + enemy.height / 2));
+
+          if (distXZ < enemy.radius && distY < enemy.height / 2 + 0.5) {
+            bulletHit = true;
+            enemy.hp -= b.damage;
+
+            enemy.material.color.setHex(0xffffff);
+            setTimeout(() => {
+              if (enemy.material) enemy.material.color.setHex(enemy.originalColor);
+            }, 80);
+
+            spawnHitParticles(b.mesh.position, b.mesh.material.color);
+
+            if (enemy.hp <= 0) {
+              scene.remove(enemy.mesh);
+              GAME.enemies.splice(j, 1);
+              onKillMonster();
+            }
+            break;
+          }
+        }
+
+        if (bulletHit || b.life <= 0) {
+          scene.remove(b.mesh);
+          GAME.bullets.splice(i, 1);
+        }
+      }
+    }
+
+    function updateEnemies(delta) {
+      const now = performance.now();
+      const playerPos = camera.position;
+
+      for (let i = 0; i < GAME.enemies.length; i++) {
+        const enemy = GAME.enemies[i];
+        
+        enemy.mesh.lookAt(playerPos.x, enemy.mesh.position.y, playerPos.z);
+
+        const dir = new THREE.Vector3().subVectors(playerPos, enemy.mesh.position);
+        dir.y = 0;
+        dir.normalize();
+
+        enemy.mesh.position.addScaledVector(dir, enemy.speed * delta);
+
+        const distToPlayer = Math.hypot(playerPos.x - enemy.mesh.position.x, playerPos.z - enemy.mesh.position.z);
+        
+        if (distToPlayer < 1.4) {
+          if (now - GAME.lastDamageTime > 1000) {
+            GAME.lastDamageTime = now;
+            takeDamage();
+            enemy.mesh.position.addScaledVector(dir, -3.0);
+          }
+        }
+      }
+    }
+
+    function spawnHitParticles(pos, color) {
+      for (let i = 0; i < 6; i++) {
+        const p = new THREE.Mesh(
+          new THREE.SphereGeometry(0.1, 4, 4),
+          new THREE.MeshBasicMaterial({ color: color })
+        );
+        p.position.copy(pos);
+        const vel = new THREE.Vector3(
+          (Math.random() - 0.5) * 0.2,
+          Math.random() * 0.2,
+          (Math.random() - 0.5) * 0.2
+        );
+        scene.add(p);
+        GAME.particles.push({ mesh: p, vel: vel, life: 12 });
+      }
+    }
+
+    function updateParticles() {
+      for (let i = GAME.particles.length - 1; i >= 0; i--) {
+        const p = GAME.particles[i];
+        p.mesh.position.add(p.vel);
+        p.life--;
+        if (p.life <= 0) {
+          scene.remove(p.mesh);
+          GAME.particles.splice(i, 1);
+        }
+      }
+    }
+
+    /* ==========================================
+       QUIZ & HP LOGIC
+       ========================================== */
+    function onKillMonster() {
+      GAME.score += 100 * GAME.currentRound;
+      GAME.killsThisRound++;
+
+      if (GAME.killsThisRound >= GAME.killsToNextRound) {
+        showQuiz();
+      }
+
+      updateHUD();
+    }
+
+    function takeDamage() {
+      if (GAME.isGameOver) return;
+
+      GAME.hp--;
+      updateHUD();
+
+      const flash = document.getElementById('damage-flash');
+      flash.style.opacity = '1';
+      setTimeout(() => flash.style.opacity = '0', 250);
+
+      if (GAME.hp <= 0) {
+        gameOver(false);
+      }
+    }
+
+    function showQuiz() {
+      GAME.isPaused = true;
+      const modal = document.getElementById('quiz-modal');
+      const questionEl = document.getElementById('quiz-question');
+      const optionsEl = document.getElementById('quiz-options');
+      const feedbackEl = document.getElementById('quiz-feedback');
+      const roundTag = document.getElementById('quiz-round-tag');
+
+      roundTag.innerText = `ROUND ${GAME.currentRound} CLEARED!`;
+      feedbackEl.className = 'hidden';
+      optionsEl.innerHTML = '';
+
+      const quizIndex = GAME.currentRound - 1;
+      const quiz = POSTER_QUIZZES[quizIndex % POSTER_QUIZZES.length];
+
+      questionEl.innerText = quiz.question;
+
+      quiz.options.forEach((optText, idx) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = "w-full py-2.5 px-3 bg-purple-950/80 hover:bg-pink-600/50 border border-purple-500/40 rounded-xl text-left text-xs sm:text-sm font-semibold transition active:scale-95 text-purple-100";
+        btn.innerText = optText;
+        btn.onclick = () => handleAnswer(idx === quiz.answer, quiz.answer);
+        optionsEl.appendChild(btn);
+      });
+
+      modal.classList.remove('hidden');
+    }
+
+    function handleAnswer(isCorrect, correctIndex) {
+      const feedbackEl = document.getElementById('quiz-feedback');
+      const optionsEl = document.getElementById('quiz-options');
+
+      Array.from(optionsEl.children).forEach((btn, idx) => {
+        btn.disabled = true;
+        if (idx === correctIndex) {
+          btn.className = "w-full py-2.5 px-3 bg-emerald-600 border border-emerald-400 rounded-xl text-left text-xs sm:text-sm font-bold text-white";
+        } else {
+          btn.className = "w-full py-2.5 px-3 bg-purple-950/40 border border-purple-800 rounded-xl text-left text-xs sm:text-sm text-purple-400 opacity-50";
+        }
+      });
+
+      feedbackEl.classList.remove('hidden');
+
+      if (isCorrect) {
+        feedbackEl.className = "text-center p-2.5 rounded-xl font-bold text-xs sm:text-sm bg-emerald-500/20 border border-emerald-500 text-emerald-300";
+        feedbackEl.innerHTML = "<i class='fa-solid fa-circle-check mr-1'></i> 정답입니다! 무기가 강화되고 HP가 1 회복됩니다.";
+        
+        GAME.weaponLevel = Math.min(GAME.weaponLevel + 1, WEAPON_CONFIGS.length);
+        GAME.hp = Math.min(GAME.hp + 1, GAME.maxHp);
+      } else {
+        feedbackEl.className = "text-center p-2.5 rounded-xl font-bold text-xs sm:text-sm bg-red-500/20 border border-red-500 text-red-300";
+        feedbackEl.innerHTML = "<i class='fa-solid fa-triangle-exclamation mr-1'></i> 오답입니다! HP가 1 감소합니다.";
+        
+        takeDamage();
+      }
+
+      GAME.killsThisRound = 0;
+
+      setTimeout(() => {
+        document.getElementById('quiz-modal').classList.add('hidden');
+        if (GAME.hp > 0) {
+          if (GAME.currentRound >= GAME.maxRounds) {
+            gameOver(true); // Game All Clear!
+          } else {
+            GAME.currentRound++;
+            updateHUD();
+            GAME.isPaused = false;
+          }
+        }
+      }, 1800);
+    }
+
+    function updateHUD() {
+      const hpContainer = document.getElementById('hp-bar');
+      hpContainer.innerHTML = '';
+      for (let i = 0; i < GAME.maxHp; i++) {
+        const heart = document.createElement('i');
+        heart.className = i < GAME.hp ? "fa-solid fa-heart text-red-500" : "fa-regular fa-heart text-purple-900";
+        hpContainer.appendChild(heart);
+      }
+
+      document.getElementById('score-text').innerText = GAME.score.toLocaleString();
+      document.getElementById('round-kills').innerText = `${GAME.killsThisRound} / ${GAME.killsToNextRound}`;
+      document.getElementById('current-round').innerText = GAME.currentRound;
+
+      const gun = WEAPON_CONFIGS[Math.min(GAME.weaponLevel - 1, WEAPON_CONFIGS.length - 1)];
+      document.getElementById('weapon-level').innerText = gun.name;
+    }
+
+    function gameOver(isVictory = false) {
+      GAME.isGameOver = true;
+      GAME.isPaused = true;
+
+      const cardBg = document.getElementById('end-card-bg');
+      const iconBox = document.getElementById('end-icon-box');
+      const icon = document.getElementById('end-icon');
+      const title = document.getElementById('end-title');
+      const subtext = document.getElementById('end-subtext');
+
+      if (isVictory) {
+        cardBg.className = "max-w-md w-full bg-purple-900/80 border-2 border-amber-400 rounded-3xl p-6 sm:p-8 shadow-2xl animate-pulse-glow";
+        iconBox.className = "inline-block p-4 bg-amber-500/20 rounded-full mb-3 text-amber-400";
+        icon.className = "fa-solid fa-trophy text-4xl";
+        title.className = "text-2xl sm:text-3xl font-black text-amber-300 mb-1";
+        title.innerText = "ALL CLEAR! 축하합니다!";
+        subtext.innerText = "모든 역사 퀴즈를 맞추고 할로윈 저택을 지켜냈습니다!";
+      } else {
+        cardBg.className = "max-w-md w-full bg-purple-900/50 border border-red-500/60 rounded-3xl p-6 sm:p-8 shadow-2xl";
+        iconBox.className = "inline-block p-4 bg-red-900/40 rounded-full mb-3 text-red-400";
+        icon.className = "fa-solid fa-skull text-4xl";
+        title.className = "text-2xl sm:text-3xl font-black text-red-400 mb-1";
+        title.innerText = "GAME OVER";
+        subtext.innerText = "저택의 몬스터 병정들에게 쓰러졌습니다!";
+      }
+
+      document.getElementById('final-score').innerText = GAME.score.toLocaleString();
+      document.getElementById('final-round').innerText = GAME.currentRound;
+      document.getElementById('game-over-screen').classList.remove('hidden');
+    }
+
+    function resetGame() {
+      GAME.hp = 3;
+      GAME.score = 0;
+      GAME.killsThisRound = 0;
+      GAME.currentRound = 1;
+      GAME.weaponLevel = 1;
+      GAME.isGameOver = false;
+      GAME.isPaused = false;
+      GAME.lastDamageTime = 0;
+
+      GAME.enemies.forEach(e => scene.remove(e.mesh));
+      GAME.bullets.forEach(b => scene.remove(b.mesh));
+      GAME.enemies = [];
+      GAME.bullets = [];
+
+      cameraYaw = 0;
+      cameraPitch = 0;
+      camera.position.set(0, 1.6, 0);
+      camera.rotation.set(0, 0, 0);
+
+      document.getElementById('game-over-screen').classList.add('hidden');
+      updateHUD();
+    }
+
+    /* ==========================================
+       TOUCH JOYSTICK & Standard FPS CONTROLS
+       ========================================== */
+    function setupControls() {
+      window.addEventListener('keydown', (e) => keysPressed[e.code] = true);
+      window.addEventListener('keyup', (e) => keysPressed[e.code] = false);
+
+      let isDragging = false;
+      let prevMouseX = 0, prevMouseY = 0;
+
+      const handleLookMove = (clientX, clientY) => {
+        if (GAME.isPaused || GAME.isGameOver) return;
+
+        const deltaX = clientX - prevMouseX;
+        const deltaY = clientY - prevMouseY;
+
+        prevMouseX = clientX;
+        prevMouseY = clientY;
+
+        cameraYaw -= deltaX * 0.003;
+        cameraPitch -= deltaY * 0.003;
+
+        cameraPitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, cameraPitch));
+
+        const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+        euler.x = cameraPitch;
+        euler.y = cameraYaw;
+        camera.quaternion.setFromEuler(euler);
+      };
+
+      window.addEventListener('mousedown', (e) => {
+        if (e.target.tagName === 'BUTTON' || e.target.closest('#joystick-zone') || e.target.closest('#hud')) return;
+        isDragging = true;
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (isDragging) handleLookMove(e.clientX, e.clientY);
+      });
+
+      window.addEventListener('mouseup', () => isDragging = false);
+
+      let lookTouchId = null;
+
+      window.addEventListener('touchstart', (e) => {
+        if (GAME.isPaused || GAME.isGameOver) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const touch = e.changedTouches[i];
+          const joyZone = document.getElementById('joystick-zone').getBoundingClientRect();
+          const shootBtn = document.getElementById('mobile-shoot-btn').getBoundingClientRect();
+
+          const inJoy = touch.clientX >= joyZone.left && touch.clientX <= joyZone.right && touch.clientY >= joyZone.top && touch.clientY <= joyZone.bottom;
+          const inShoot = touch.clientX >= shootBtn.left && touch.clientX <= shootBtn.right && touch.clientY >= shootBtn.top && touch.clientY <= shootBtn.bottom;
+
+          if (!inJoy && !inShoot && lookTouchId === null) {
+            lookTouchId = touch.identifier;
+            prevMouseX = touch.clientX;
+            prevMouseY = touch.clientY;
+          }
+        }
+      }, { passive: true });
+
+      window.addEventListener('touchmove', (e) => {
+        if (lookTouchId === null) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const touch = e.changedTouches[i];
+          if (touch.identifier === lookTouchId) {
+            handleLookMove(touch.clientX, touch.clientY);
+          }
+        }
+      }, { passive: true });
+
+      const stopLookTouch = (e) => {
+        if (lookTouchId === null) return;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === lookTouchId) {
+            lookTouchId = null;
+          }
+        }
+      };
+
+      window.addEventListener('touchend', stopLookTouch);
+      window.addEventListener('touchcancel', stopLookTouch);
+
+      setupJoystick();
+
+      const shootBtn = document.getElementById('mobile-shoot-btn');
+      shootBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        shootCandy();
+      });
+      shootBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        shootCandy();
+      });
+
+      document.getElementById('start-btn').addEventListener('click', () => {
+        document.getElementById('start-screen').classList.add('hidden');
+        GAME.isPaused = false;
+        animate();
+      });
+
+      // Google Form URL Copy logic
+      const copyBtn = document.getElementById('copy-url-btn');
+      const urlInput = document.getElementById('google-form-url');
+      const copyStatus = document.getElementById('copy-status');
+
+      copyBtn.addEventListener('click', () => {
+        urlInput.select();
+        urlInput.setSelectionRange(0, 99999); // 모바일 보장
+        
+        try {
+          document.execCommand('copy');
+          copyStatus.classList.remove('hidden');
+          setTimeout(() => copyStatus.classList.add('hidden'), 2000);
+        } catch (err) {
+          // fallback
+        }
+      });
+
+      document.getElementById('retry-btn').addEventListener('click', resetGame);
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    }
+
+    function setupJoystick() {
+      const zone = document.getElementById('joystick-zone');
+      const stick = document.getElementById('joystick-stick');
+      let joyTouchId = null;
+      let startX = 0, startY = 0;
+
+      zone.addEventListener('touchstart', (e) => {
+        if (joyTouchId !== null) return;
+
+        const touch = e.changedTouches[0];
+        joyTouchId = touch.identifier;
+        const rect = zone.getBoundingClientRect();
+        startX = rect.left + rect.width / 2;
+        startY = rect.top + rect.height / 2;
+      }, { passive: true });
+
+      window.addEventListener('touchmove', (e) => {
+        if (joyTouchId === null) return;
+
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const touch = e.changedTouches[i];
+          if (touch.identifier === joyTouchId) {
+            const dx = touch.clientX - startX;
+            const dy = touch.clientY - startY;
+            const maxRadius = 45;
+            const dist = Math.min(Math.hypot(dx, dy), maxRadius);
+            const angle = Math.atan2(dy, dx);
+
+            stick.style.transform = `translate(${Math.cos(angle) * dist}px, ${Math.sin(angle) * dist}px)`;
+
+            // 조이스틱 이동 벡터 매핑
+            // dx > 0 : 오른쪽 밀기 -> right = +
+            // dy < 0 : 위로 밀기 -> forward = +
+            moveVector.right = dx / maxRadius;
+            moveVector.forward = -dy / maxRadius;
+            
+            const mag = Math.hypot(moveVector.right, moveVector.forward);
+            if (mag > 1) {
+              moveVector.right /= mag;
+              moveVector.forward /= mag;
+            }
+          }
+        }
+      }, { passive: true });
+
+      const stopJoystick = (e) => {
+        if (joyTouchId === null) return;
+
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === joyTouchId) {
+            joyTouchId = null;
+            stick.style.transform = `translate(0px, 0px)`;
+            moveVector.forward = 0;
+            moveVector.right = 0;
+          }
+        }
+      };
+
+      window.addEventListener('touchend', stopJoystick);
+      window.addEventListener('touchcancel', stopJoystick);
+    }
+  </script>
+</body>
+</html>
